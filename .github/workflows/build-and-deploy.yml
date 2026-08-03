@@ -104,7 +104,7 @@ jobs:
       # log, so anyone can verify the bytes at the CDN URL came from this repo and commit:
       #   gh attestation verify influence360.js --repo Influence360/tracking-pixel
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/influence360.js
 
@@ -186,7 +186,7 @@ jobs:
         run: npm run verify:reproducible
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/influence360.js
 
