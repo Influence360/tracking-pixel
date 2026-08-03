@@ -1,0 +1,25 @@
+{
+  "name": "@influence360/tracking-pixel",
+  "version": "1.0.0",
+  "description": "Influence360 conversion pixel — browser tracker (influence360.js) + bootstrap stub.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "verify:reproducible": "node scripts/check-reproducible.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@types/jsdom": "^28.0.3",
+    "@types/node": "^26.1.2",
+    "esbuild": "^0.28.1",
+    "jsdom": "^30.0.1",
+    "prettier": "^3.9.6",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.9"
+  }
+}

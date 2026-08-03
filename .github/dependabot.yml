@@ -1,0 +1,47 @@
+version: 2
+updates:
+  # Grouped so a week's updates arrive as a few reviewable PRs instead of one per package. Only
+  # devDependencies exist here — the bundle ships with zero runtime deps — so nothing in these groups
+  # can reach a customer's browser; what is being managed is the build toolchain.
+  - package-ecosystem: npm
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 10
+    groups:
+      # esbuild and typescript decide the emitted bytes, so a bump here can change the published hash.
+      # Kept in its own PR: check `npm run verify:reproducible` and whether dist/ actually changed, and
+      # remember a changed bundle needs a version bump (a pinned path is never republished).
+      build-toolchain:
+        patterns:
+          - 'esbuild'
+          - 'typescript'
+      # Test and format tooling cannot affect the artifact, so batch it, majors included.
+      dev-tooling:
+        patterns:
+          - 'vitest'
+          - 'jsdom'
+          - '@types/*'
+          - 'prettier'
+        update-types:
+          - 'minor'
+          - 'patch'
+          - 'major'
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 10
+    groups:
+      # The actions that mint the OIDC token, sign the attestation and reach AWS — i.e. the ones that
+      # hold the deploy credentials. Reviewed together, separately from ordinary CI actions.
+      release-actions:
+        patterns:
+          - 'actions/attest-build-provenance'
+          - 'aws-actions/*'
+      ci-actions:
+        patterns:
+          - '*'
+        exclude-patterns:
+          - 'actions/attest-build-provenance'
+          - 'aws-actions/*'

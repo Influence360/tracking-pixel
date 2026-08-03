@@ -1,0 +1,210 @@
+name: build and deploy pixel
+
+# Builds dist/influence360.js (collector URL baked in per environment), attests its provenance, and
+# publishes it via scripts/publish.sh to the S3 bucket fronted by CloudFront:
+#   v<version>/influence360.js  immutable, 1y   — what customers pin with integrity=. Never overwritten.
+#   v<major>/influence360.js    rolling, 5m/1d  — the auto-update channel.
+#   manifest.json               60s             — published builds + their sha256/sha384.
+# The production CDN host is https://tracking-pixel.influence360.io.
+#
+# The version comes from package.json. Publishing a version whose bytes differ from what is already
+# published FAILS the job rather than overwriting it — an overwritten pinned object silently breaks
+# every customer's `integrity=` attribute. Bump the version to ship a change.
+#
+# AWS access is GitHub OIDC with role chaining: the OIDC token assumes a first role, which then assumes
+# the role that owns the target bucket. No long-lived AWS credentials exist in this repo.
+#
+# EVERY per-environment value (both role ARNs, the bucket, the public host, the collector URL) is an
+# environment-scoped Actions variable — this repo is public, and a public workflow file publishes
+# whatever is written in it. They are read at STEP level rather than in a job-level `env:` block:
+# environment variables are documented as available "after their environment is declared by the runner",
+# and an empty value would be silent and wrong rather than loud (build.mjs falls back to the PRODUCTION
+# collector when the variable is unset, and an empty string bakes an empty URL). `Check deploy config`
+# fails the job before anything is built, signed or uploaded. It prints only the collector and the CDN
+# host, both of which are public: this repo's build logs are world-readable, so the bucket name and the
+# distribution id are deliberately kept out of them.
+
+# Both jobs run on every trigger. There is no environment input: the `prod` environment's required
+# reviewers are the gate, so a push deploys staging and parks the same commit for a one-click promotion.
+# A manual dispatch is simply a re-run of that pair.
+#
+# Because prod is queued on every push, several approvals can pile up. Approving an OLDER one rebuilds
+# that commit — if its package.json version differs it publishes that version and rolls `/v{major}/` back
+# to older code. (Same version, different bytes is already refused by scripts/publish.sh.) Cancel
+# superseded waiting runs before approving.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  ########################################################
+  # Staging: deploys unconditionally on every run — the `staging` environment has no required reviewers.
+  deploy-staging:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    permissions:
+      id-token: write # OIDC federation to AWS
+      contents: read
+      attestations: write # sigstore build provenance for the published artifact
+    environment:
+      name: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check deploy config
+        env:
+          INFLUENCE360_COLLECT_URL: ${{ vars.INFLUENCE360_COLLECT_URL }}
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          PUBLIC_HOST: ${{ vars.PUBLIC_HOST }}
+          TARGET_ROLE_ARN: ${{ vars.TARGET_ROLE_ARN }}
+          AWS_GITHUB_ROLE_ARN: ${{ vars.AWS_GITHUB_ROLE_ARN }}
+        run: |
+          missing=
+          for name in INFLUENCE360_COLLECT_URL S3_BUCKET PUBLIC_HOST TARGET_ROLE_ARN AWS_GITHUB_ROLE_ARN; do
+            [ -n "${!name}" ] || missing="${missing} ${name}"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::empty Actions variable(s):${missing} — declare them as environment-scoped Actions variables for this environment"
+            exit 1
+          fi
+          echo "collector: ${INFLUENCE360_COLLECT_URL}"
+          echo "host:      ${PUBLIC_HOST}"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      # Builds twice and asserts identical hashes — a published sha384 is only verifiable if the
+      # build is reproducible from source. Leaves dist/ holding the staging build.
+      - name: Build bundle (staging collector) + reproducibility check
+        env:
+          INFLUENCE360_COLLECT_URL: ${{ vars.INFLUENCE360_COLLECT_URL }}
+        run: npm run verify:reproducible
+
+      # Signed by sigstore with this workflow's OIDC identity and recorded in the public transparency
+      # log, so anyone can verify the bytes at the CDN URL came from this repo and commit:
+      #   gh attestation verify influence360.js --repo Influence360/tracking-pixel
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: dist/influence360.js
+
+      - name: Configure AWS credentials (OIDC first hop)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Assume target account role
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.TARGET_ROLE_ARN }}
+          role-chaining: true
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Publish pixel + manifest, invalidate CloudFront
+        env:
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          PUBLIC_HOST: ${{ vars.PUBLIC_HOST }}
+        run: ./scripts/publish.sh
+
+  ########################################################
+  # Prod: queued on every run too, but held by the `prod` environment's required reviewers — so a push to
+  # main deploys staging immediately and parks the same commit awaiting a one-click promotion to prod.
+  # Deliberately not gated by an `if:` on the dispatch input; the approval IS the gate.
+  deploy-prod:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+      contents: read
+      attestations: write
+    environment:
+      name: prod
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check deploy config
+        env:
+          INFLUENCE360_COLLECT_URL: ${{ vars.INFLUENCE360_COLLECT_URL }}
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          PUBLIC_HOST: ${{ vars.PUBLIC_HOST }}
+          TARGET_ROLE_ARN: ${{ vars.TARGET_ROLE_ARN }}
+          AWS_GITHUB_ROLE_ARN: ${{ vars.AWS_GITHUB_ROLE_ARN }}
+        run: |
+          missing=
+          for name in INFLUENCE360_COLLECT_URL S3_BUCKET PUBLIC_HOST TARGET_ROLE_ARN AWS_GITHUB_ROLE_ARN; do
+            [ -n "${!name}" ] || missing="${missing} ${name}"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::empty Actions variable(s):${missing} — declare them as environment-scoped Actions variables for this environment"
+            exit 1
+          fi
+          echo "collector: ${INFLUENCE360_COLLECT_URL}"
+          echo "host:      ${PUBLIC_HOST}"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build bundle (prod collector) + reproducibility check
+        env:
+          INFLUENCE360_COLLECT_URL: ${{ vars.INFLUENCE360_COLLECT_URL }}
+        run: npm run verify:reproducible
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: dist/influence360.js
+
+      - name: Configure AWS credentials (OIDC first hop)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Assume target account role
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.TARGET_ROLE_ARN }}
+          role-chaining: true
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Publish pixel + manifest, invalidate CloudFront
+        env:
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          PUBLIC_HOST: ${{ vars.PUBLIC_HOST }}
+        run: ./scripts/publish.sh

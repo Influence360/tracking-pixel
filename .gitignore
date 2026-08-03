@@ -1,0 +1,21 @@
+# compiled output
+/dist
+/node_modules
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+
+# Tests
+/coverage
+
+# IDEs and editors
+/.idea
+.project
+.settings/
+
+# tsc
+*.tsbuildinfo

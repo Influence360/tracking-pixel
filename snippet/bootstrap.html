@@ -1,0 +1,67 @@
+<!--
+  Influence360 conversion pixel — bootstrap stub.
+
+  This is the copy-paste snippet the company adds to their site (the portal renders it with the
+  company's real PUBLIC_TOKEN pre-filled). It defines a tiny `influence360()` that QUEUES calls, then async-
+  loads the real tracker (influence360.js) from our CDN; nothing blocks page render. The loaded library
+  drains the queue.
+
+  Placement:
+    - `init` on every page (so the ref id from the landing URL is captured site-wide).
+    - `track` on each conversion success page (the registration / purchase / etc. page).
+    - `identify` (web3 only) right after the visitor connects a wallet, to bind that wallet to the
+      referral so on-chain actions from it are attributed to the creator (wallet-at-activity).
+
+  Replace `PUBLIC_TOKEN` with the value shown in the Influence360 portal. The CDN host is
+  https://tracking-pixel.influence360.io.
+
+  Two ways to load it — the portal renders whichever you pick:
+
+    - AUTO-UPDATE (this file): the rolling major channel `/v1/influence360.js`. You get fixes as we ship
+      them, and nothing to maintain. Not pinnable — the object changes.
+    - PINNED + VERIFIED: an exact build at `/v<version>/influence360.js` plus `integrity`, so the
+      browser refuses to run bytes that are not the ones we published, and `crossorigin="anonymous"`
+      (required by SRI — our CDN sends `Access-Control-Allow-Origin: *`). Every published build and its
+      hash is listed at https://tracking-pixel.influence360.io/manifest.json. Pinned objects are
+      immutable and never republished, so a hash never goes stale; you update by bumping the version.
+
+      Set both properties on the injected element — `integrity` is not inherited by a dynamically
+      created script:
+
+        s.src = 'https://tracking-pixel.influence360.io/v1.0.0/influence360.js';
+        s.integrity = 'sha384-…';    // from manifest.json (the portal fills it in)
+        s.crossOrigin = 'anonymous';
+-->
+<script>
+  !(function (w, d) {
+    w.influence360 =
+      w.influence360 ||
+      function () {
+        (w.influence360.q = w.influence360.q || []).push(arguments);
+      };
+    var s = d.createElement('script');
+    s.async = 1;
+    s.src = 'https://tracking-pixel.influence360.io/v1/influence360.js';
+    d.head.appendChild(s);
+  })(window, document);
+
+  influence360('init', 'PUBLIC_TOKEN', {
+    // Optional: route events through your own first-party proxy or a regional collector.
+    // Omit to use the default. collectUrl: 'https://your-proxy.example.com/influence360/collect',
+  });
+  // On the conversion success page (use your event type — SIGN_UP, PURCHASE, … — from the portal):
+  influence360('track', 'SIGN_UP', {
+    dedupKey: '<order-or-user-id>',
+    // For monetary events, send the type-specific amount:
+    //   PURCHASE      -> orderValue: 49.99
+    //   DEPOSIT       -> depositValue: 250.00
+    //   SUBSCRIPTION  -> planPrice: 9.99, qualifyingPlan: 'pro-monthly'
+  });
+  // Web3 only: right after the visitor connects their wallet, bind it to the referral so an on-chain
+  // action from that wallet is attributed to the creator (wallet-at-activity).
+  // influence360('identify', '<connected-wallet-address>', { chain: 'ETHEREUM' });
+  // Web3, deterministic (best): pass { erc8021Marker: '<16-byte hex>' } to init, then append the referral
+  // tag to the END of the user's transaction calldata so the on-chain conversion carries it directly:
+  //   const suffix = influence360.referralTag();      // '' when no referral / marker
+  //   if (suffix) tx.data = tx.data + suffix;         // ERC-8021-style trailing tag
+</script>
