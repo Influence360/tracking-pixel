@@ -66,6 +66,24 @@ curl -s https://tracking-pixel.influence360.io/v1.0.0/influence360.js \
   | openssl dgst -sha384 -binary | openssl base64 -A
 ```
 
-Builds are also reproducible from source (`npm run verify:reproducible`) and carry
-[sigstore](https://www.sigstore.dev/) build provenance from the GitHub Actions workflow that published
-them. If a hash you compute does not match the manifest, treat that as a security report.
+Builds are also reproducible from source, so you can rebuild this repository at the tagged version and
+get the same bytes:
+
+```bash
+npm ci && npm run verify:reproducible
+```
+
+Each published artifact additionally carries a [sigstore](https://www.sigstore.dev/) provenance
+attestation binding its digest to the workflow, repository and commit that produced it:
+
+```bash
+gh attestation verify influence360.js --repo Influence360/tracking-pixel
+```
+
+To be precise about what that proves: the attestation is signed by **GitHub's** sigstore instance and
+carries an RFC-3161 timestamp, not an inclusion proof in a public transparency log. So it lets you confirm
+the bytes were built by this repository's workflow with GitHub as the trust root — it is not an
+independently auditable public log entry. The reproducible build above is the check that does not require
+trusting us or GitHub.
+
+If a hash you compute does not match the manifest, treat that as a security report.
