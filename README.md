@@ -4,7 +4,47 @@ Influence360 conversion **pixel** — the client-side tracker companies embed on
 report conversions. It is the browser half of the tracking pipeline; the other half is the Influence360
 collector API it posts to.
 
-Two artifacts:
+Licensed under [Apache-2.0](LICENSE). Security reports: [SECURITY.md](SECURITY.md). Contributing:
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+## What it does, and what it does not
+
+If you are evaluating whether to put this on your site, this is the part that matters. ~4 KB minified,
+**zero runtime dependencies**.
+
+It does:
+
+- Read a referral id from the landing URL and store it in a **first-party cookie on your own domain**
+  (`_influence360_ref_id`), so a later conversion can be credited to the creator who sent the visitor.
+- Send a fire-and-forget beacon to the collector when you call `track(...)` on a conversion page.
+- Optionally bind a connected wallet to that referral when you call `identify(...)` (web3 only).
+
+It does not:
+
+- **Read cookies, storage or page content it did not write.** No form fields, no keystrokes, no
+  clipboard, no DOM scraping, no session recording.
+- **Fingerprint the device.** No canvas, font, or hardware probing.
+- **Load anything else.** No third-party scripts, no tag manager, no remote config — the bundle you pin
+  is all of it.
+- **Block rendering, or throw into your page.** Beacons are `sendBeacon`/keepalive `fetch`, and the
+  tracker swallows its own errors by design: a failure on our side must never break your checkout.
+- **Track across sites.** The cookie is first-party to your domain and is not readable by us anywhere
+  else.
+
+Two things worth knowing before you deploy it:
+
+- The **public token in the snippet is not a secret** — it identifies your company, is visible in page
+  source by design, and grants no read access.
+- Conversion **values sent from the browser are user-editable** — anyone can call `track()` with a
+  different amount. For payouts that depend on an amount, use the server-to-server postback instead. The
+  portal warns about this at the point of copying the snippet.
+
+You can verify that the file you load is the file we published: every build is listed in
+[manifest.json](https://tracking-pixel.influence360.io/manifest.json) with its SHA-384, versioned paths
+are immutable, builds are reproducible from this source, and each carries sigstore provenance from CI.
+See [Hosting](#hosting).
+
+## Artifacts
 
 - **Bootstrap stub** ([`snippet/bootstrap.html`](snippet/bootstrap.html)) — the tiny `<script>` the
   company pastes (the portal renders it with their real `PUBLIC_TOKEN`). It queues `influence360(...)` calls and

@@ -32,6 +32,11 @@ name: build and deploy pixel
 # that commit — if its package.json version differs it publishes that version and rolls `/v{major}/` back
 # to older code. (Same version, different bytes is already refused by scripts/publish.sh.) Cancel
 # superseded waiting runs before approving.
+#
+# Third-party actions are pinned to a commit SHA with the version in a trailing comment — do not "tidy"
+# them back to `@v7`. A tag is mutable, and this workflow holds an OIDC token that can publish to the CDN,
+# so a moved tag would be a supply-chain change we never reviewed. Dependabot updates SHA pins as normal
+# (see .github/dependabot.yml, where these land in the `release-actions` group).
 on:
   workflow_dispatch:
   push:
@@ -55,7 +60,7 @@ jobs:
       name: staging
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -79,7 +84,7 @@ jobs:
           echo "host:      ${PUBLIC_HOST}"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '26'
           cache: 'npm'
@@ -104,18 +109,18 @@ jobs:
       # log, so anyone can verify the bytes at the CDN URL came from this repo and commit:
       #   gh attestation verify influence360.js --repo Influence360/tracking-pixel
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: dist/influence360.js
 
       - name: Configure AWS credentials (OIDC first hop)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
         with:
           role-to-assume: ${{ vars.AWS_GITHUB_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Assume target account role
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
         with:
           role-to-assume: ${{ vars.TARGET_ROLE_ARN }}
           role-chaining: true
@@ -142,7 +147,7 @@ jobs:
       name: prod
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -166,7 +171,7 @@ jobs:
           echo "host:      ${PUBLIC_HOST}"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '26'
           cache: 'npm'
@@ -186,18 +191,18 @@ jobs:
         run: npm run verify:reproducible
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: dist/influence360.js
 
       - name: Configure AWS credentials (OIDC first hop)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
         with:
           role-to-assume: ${{ vars.AWS_GITHUB_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Assume target account role
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
         with:
           role-to-assume: ${{ vars.TARGET_ROLE_ARN }}
           role-chaining: true
