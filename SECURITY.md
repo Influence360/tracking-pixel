@@ -80,10 +80,17 @@ attestation binding its digest to the workflow, repository and commit that produ
 gh attestation verify influence360.js --repo Influence360/tracking-pixel
 ```
 
-To be precise about what that proves: the attestation is signed by **GitHub's** sigstore instance and
-carries an RFC-3161 timestamp, not an inclusion proof in a public transparency log. So it lets you confirm
-the bytes were built by this repository's workflow with GitHub as the trust root — it is not an
-independently auditable public log entry. The reproducible build above is the check that does not require
-trusting us or GitHub.
+To be precise about what that proves: builds published since this repository became public are signed by
+**public sigstore** (`O = sigstore.dev`) and recorded in its public **Rekor** transparency log, so the
+attestation is independently auditable — you can confirm the bytes came out of this repository's workflow
+without trusting us, and without trusting GitHub alone. Verified 2026-08-05 by fetching the Rekor entry
+anonymously and getting a signed inclusion proof and checkpoint.
+
+Builds published **before** the repository went public were signed by GitHub's own sigstore instance with
+an RFC-3161 timestamp and carry no public log entry; for those, GitHub is the trust root. If you are
+verifying an old artifact and see issuer `O = "GitHub, Inc.", CN = Fulcio Intermediate`, that is why.
+
+The reproducible build above remains the strongest check, because it is the only one that ties the bytes
+to source you can read.
 
 If a hash you compute does not match the manifest, treat that as a security report.

@@ -109,12 +109,18 @@ jobs:
       # check that the bytes at the CDN URL were built here, from this commit:
       #   gh attestation verify influence360.js --repo Influence360/tracking-pixel
       #
-      # Be precise about what this proves. Verified 2026-08-05 by decoding a published bundle: the
-      # signing certificate is issued by `O = "GitHub, Inc.", CN = Fulcio Intermediate l2` — GitHub's own
-      # Fulcio, not public-good sigstore — and the bundle carries an RFC-3161 timestamp with
-      # `tlogEntries: []`, i.e. no public Rekor inclusion proof. GitHub is therefore the trust root: a
-      # third party can confirm provenance *through GitHub*, but cannot audit it independently in a public
-      # transparency log. Do not describe this to customers as "recorded in a public transparency log".
+      # Be precise about what this proves, and note that it CHANGED when the repo went public.
+      #
+      # Re-measured 2026-08-05 across all 9 attestations for the same artifact digest: builds up to cert
+      # notBefore 17:59:32 (the last private-repo build) are signed by `O = "GitHub, Inc.", CN = Fulcio
+      # Intermediate l2` with an RFC-3161 timestamp and `tlogEntries: []`. Builds from 18:15:42 onward —
+      # i.e. after the visibility flip — are signed by `O = sigstore.dev` and carry a Rekor entry;
+      # logIndex 2349047135 was fetched anonymously from rekor.sigstore.dev and returned a signed
+      # inclusion proof plus checkpoint.
+      #
+      # So provenance for current builds IS independently auditable in the public transparency log, and
+      # saying so to customers is accurate. This flips back if the repository is ever made private again —
+      # re-measure the bundle before editing any customer-facing claim about it.
       - name: Attest build provenance
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
