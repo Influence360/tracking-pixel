@@ -23,8 +23,8 @@
     "format:check": "prettier --check ."
   },
   "devDependencies": {
-    "@types/jsdom": "^28.0.3",
-    "@types/node": "^26.1.2",
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^26.2.0",
     "esbuild": "^0.28.1",
     "jsdom": "^30.0.1",
     "prettier": "^3.9.6",
