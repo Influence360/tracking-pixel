@@ -65,6 +65,7 @@ if (service === 's3api' && op === 'head-object') {
       fs.writeFileSync(file + '.meta', JSON.stringify(Object.fromEntries(opt('--metadata').split(',').map((kv) => kv.split('=')))));
   }
 } else if (service === 'cloudfront' && op === 'list-distributions') {
+  if (process.env.STUB_LIST_ERROR) fail(process.env.STUB_LIST_ERROR, 254);
   // The account holds a distribution with no aliases, so a query calling contains() on a bare
   // Aliases.Items fails the way the real CLI does.
   if (!opt('--query').includes('contains(Aliases.Items || \`[]\`,'))
@@ -192,6 +193,28 @@ describe('publish.sh — the pinned object', () => {
       expect(objectBody(IMMUTABLE_KEY)).toBe('old bytes');
     },
   );
+});
+
+describe('publish.sh — reads before writes', () => {
+  it('uploads nothing when the published-state check cannot even be recorded', () => {
+    // A directory where the head-object output goes makes the redirect fail before aws runs.
+    mkdirSync(join(root, 'dist', 'published-head.json'));
+
+    const run = publish();
+
+    expect(run.status).toBe(1);
+    expect(writes(run.calls)).toEqual([]);
+  });
+
+  it('uploads nothing when the distribution lookup fails', () => {
+    const run = publish({
+      STUB_LIST_ERROR:
+        'aws: [ERROR]: An error occurred (Throttling) when calling the ListDistributions operation: Rate exceeded',
+    });
+
+    expect(run.status).not.toBe(0);
+    expect(writes(run.calls)).toEqual([]);
+  });
 });
 
 describe('publish.sh — the manifest', () => {
