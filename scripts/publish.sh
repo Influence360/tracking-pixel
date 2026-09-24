@@ -14,6 +14,12 @@
 # already published is a hard failure, not an overwrite. Re-publishing identical bytes is a no-op, so
 # re-running a deploy is safe.
 #
+# Every read of the bucket fails CLOSED. "Is it already published?" is answered "no" only when S3 says
+# 404; a 403, a throttle, a 5xx or a network error ends the deploy, because reading any of them as "not
+# there" would upload over a pinned object (step 1) or republish a manifest that has lost every older
+# build (step 3). A genuinely missing key answers 404 rather than 403 only because the deploy role holds
+# s3:ListBucket on the bucket — without it, every first publish of a version fails here, loudly.
+#
 # Required env: S3_BUCKET, PUBLIC_HOST. Requires: aws, node, jq-free (node parses the JSON).
 set -euo pipefail
 
@@ -21,6 +27,24 @@ set -euo pipefail
 : "${PUBLIC_HOST:?PUBLIC_HOST is required}"
 
 read_entry() { node -p "require('./dist/manifest-entry.json').$1"; }
+
+AWS_ERR=$(mktemp)
+trap 'rm -f "$AWS_ERR"' EXIT
+
+# Runs an aws call that may legitimately find nothing: returns 0 when it succeeded (stdout passes
+# through), 3 when S3 answered 404, and ends the deploy on any other failure. The AWS CLI exits non-zero
+# for every error class alike, so the HTTP status in the message is the only thing telling them apart.
+# The error is printed with the bucket name replaced: it is a masked secret, but the mask is only as good
+# as the value being stored as one.
+aws_unless_missing() {
+  local status=0 err
+  "$@" 2>"$AWS_ERR" || status=$?
+  [ "$status" -eq 0 ] && return 0
+  grep -q '(404)' "$AWS_ERR" && return 3
+  err=$(tr '\n' ' ' <"$AWS_ERR")
+  echo "::error::aws $2 $3 failed (exit ${status}), refusing to treat it as not-published: ${err//"$S3_BUCKET"/<bucket>}" >&2
+  exit 1
+}
 
 VERSION=$(read_entry version)
 SHA256=$(read_entry sha256)
@@ -40,11 +64,14 @@ echo "  ${SHA384}"
 
 ########################################################################################################
 # 1. Immutable pinned object — write once, verify on re-run.
-if existing=$(aws s3api head-object --bucket "$S3_BUCKET" --key "$IMMUTABLE_KEY" 2>/dev/null); then
+head_status=0
+aws_unless_missing aws s3api head-object --bucket "$S3_BUCKET" --key "$IMMUTABLE_KEY" \
+  >dist/published-head.json || head_status=$?
+if [ "$head_status" -eq 0 ]; then
   published_sha=$(node -e '
-    const meta = JSON.parse(process.argv[1]).Metadata ?? {};
+    const meta = require("./dist/published-head.json").Metadata ?? {};
     process.stdout.write(meta.sha256 ?? "");
-  ' "$existing")
+  ')
   if [ -z "$published_sha" ]; then
     echo "::error::${IMMUTABLE_KEY} already exists without a sha256 tag — refusing to overwrite a pinned object. Bump the version in package.json."
     exit 1
@@ -71,8 +98,15 @@ aws s3 cp --only-show-errors dist/influence360.js "s3://${S3_BUCKET}/${ROLLING_K
 
 ########################################################################################################
 # 3. Public manifest — merge this build into whatever is already published.
-aws s3 cp --only-show-errors "s3://${S3_BUCKET}/manifest.json" dist/published-manifest.json 2>/dev/null ||
+# Only a 404 is "nothing published yet"; merge-manifest.mjs then starts a new index from this build.
+rm -f dist/published-manifest.json
+manifest_status=0
+aws_unless_missing aws s3 cp --only-show-errors "s3://${S3_BUCKET}/manifest.json" \
+  dist/published-manifest.json || manifest_status=$?
+if [ "$manifest_status" -ne 0 ]; then
+  rm -f dist/published-manifest.json
   echo "  no published manifest yet"
+fi
 node scripts/merge-manifest.mjs dist/published-manifest.json dist/manifest.json
 aws s3 cp --only-show-errors dist/manifest.json "s3://${S3_BUCKET}/manifest.json" \
   --content-type "application/json; charset=utf-8" \
@@ -80,8 +114,9 @@ aws s3 cp --only-show-errors dist/manifest.json "s3://${S3_BUCKET}/manifest.json
 
 ########################################################################################################
 # 4. Invalidate only the mutable objects. The pinned path is immutable, so it is never in the way.
+# A distribution with no aliases has no Aliases.Items at all, and contains() on null is a type error.
 DIST_ID=$(aws cloudfront list-distributions \
-  --query "DistributionList.Items[?contains(Aliases.Items, '${PUBLIC_HOST}')].Id | [0]" \
+  --query "DistributionList.Items[?contains(Aliases.Items || \`[]\`, '${PUBLIC_HOST}')].Id | [0]" \
   --output text)
 if [ -z "$DIST_ID" ] || [ "$DIST_ID" = "None" ]; then
   echo "::error::No CloudFront distribution found for alias ${PUBLIC_HOST}"

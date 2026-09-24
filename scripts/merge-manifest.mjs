@@ -20,15 +20,30 @@ if (!existingPath || !outPath) {
 
 const entry = JSON.parse(await readFile('dist/manifest-entry.json', 'utf8'));
 
-// A missing/unreadable existing manifest is the first publish, not an error.
+// Only a missing file is the first publish. One that exists but does not parse, or has no `builds`
+// array, is refused: starting over from it would republish an index that has lost every older build.
 let manifest = { artifact: 'influence360.js', channels: {}, builds: [] };
+let existing;
 try {
-  const parsed = JSON.parse(await readFile(existingPath, 'utf8'));
-  if (Array.isArray(parsed?.builds)) {
-    manifest = { ...manifest, ...parsed, channels: parsed.channels ?? {} };
-  }
-} catch {
+  existing = await readFile(existingPath, 'utf8');
+} catch (err) {
+  if (err?.code !== 'ENOENT') throw err;
   console.log(`no existing manifest at ${existingPath} — starting a new one`);
+}
+if (existing !== undefined) {
+  let parsed;
+  try {
+    parsed = JSON.parse(existing);
+  } catch {
+    parsed = undefined;
+  }
+  if (!Array.isArray(parsed?.builds)) {
+    console.error(
+      `::error::the published manifest is not a valid index (no builds array) — refusing to replace it with one that drops every older build`,
+    );
+    process.exit(1);
+  }
+  manifest = { ...manifest, ...parsed, channels: parsed.channels ?? {} };
 }
 
 manifest.builds = [

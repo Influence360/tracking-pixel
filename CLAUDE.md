@@ -19,7 +19,9 @@ visitor's browser, so keep it small.
 - `build.mjs` — esbuild bundle; bakes the collector URL via `--define` (`INFLUENCE360_COLLECT_URL`) and
   emits `dist/manifest-entry.json` (sha256 + the sha384 customers pin with `integrity=`).
 - `scripts/publish.sh` — the deploy: immutable `/v<version>/`, rolling `/v<major>/`, merged
-  `manifest.json`, CloudFront invalidation. Refuses to overwrite an already-published version.
+  `manifest.json`, CloudFront invalidation. Refuses to overwrite an already-published version, and
+  fails closed: only a 404 reads as "not published yet" — any other S3 error ends the deploy.
+  `test/publish.test.ts` runs it against a stub `aws`.
 - `scripts/assume-role.sh` — GitHub OIDC → first-hop role → target role, credentials masked and
   exported to `$GITHUB_ENV`. Prints nothing STS returns.
 - `scripts/merge-manifest.mjs`, `scripts/check-reproducible.mjs` — manifest merge and the
