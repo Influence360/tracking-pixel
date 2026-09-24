@@ -87,6 +87,8 @@ if [ -z "$DIST_ID" ] || [ "$DIST_ID" = "None" ]; then
   echo "::error::No CloudFront distribution found for alias ${PUBLIC_HOST}"
   exit 1
 fi
+# A denied invalidation's error quotes the distribution ARN, id included.
+echo "::add-mask::${DIST_ID}"
 echo "  invalidating /${ROLLING_KEY} and /manifest.json"
 aws cloudfront create-invalidation --distribution-id "$DIST_ID" \
   --paths "/${ROLLING_KEY}" "/manifest.json" >/dev/null

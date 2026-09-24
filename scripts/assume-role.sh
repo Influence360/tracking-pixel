@@ -20,11 +20,14 @@ set -euo pipefail
 : "${ACTIONS_ID_TOKEN_REQUEST_URL:?no OIDC token endpoint — the job needs permissions: id-token: write}"
 : "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:?no OIDC token endpoint — the job needs permissions: id-token: write}"
 
-# An STS or S3 error message can quote an ARN or account id; the ARNs are secrets (already masked), the
-# bare account ids derived from them are not, so mask those before the first AWS call.
+# An STS or S3 error message can quote an ARN or account id; the ARNs are secrets (already masked), but
+# the pieces an error rebuilds from them are not: the bare account id, and the role name — an
+# assumed-role ARN (`arn:aws:sts::<acct>:assumed-role/<name>/<session>`) drops the IAM path, so it never
+# contains the masked role ARN. Mask both before the first AWS call.
 for arn in "$AWS_GITHUB_ROLE_ARN" "$TARGET_ROLE_ARN"; do
   account=$(cut -d: -f5 <<<"$arn")
   if [ -n "$account" ]; then echo "::add-mask::${account}"; fi
+  echo "::add-mask::${arn##*/}"
 done
 
 # Session name must stay `GitHubActions`: the target role's trust policy names the first hop's
