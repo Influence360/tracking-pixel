@@ -76,6 +76,7 @@ a single character of drift makes every wallet signature verify as false.
 - **This repository is public — nothing internal goes in it, including in comments.** No names of private
   repositories or internal documents, no infra identifiers (account ids, role ARNs, bucket names,
   internal hostnames), and nothing echoed into a build log, since run logs are world-readable too.
-  Per-environment values are environment-scoped Actions variables. When a comment exists to protect a
+  Per-environment values are environment-scoped: infra identifiers as secrets (the only kind the run log
+  masks), the public CDN and collector hosts as variables. When a comment exists to protect a
   cross-repo contract, keep the invariant and drop the pointer: say the collector must reconstruct the
   same bytes, without naming the class that does it. See `CLAUDE.md` for the full rule.

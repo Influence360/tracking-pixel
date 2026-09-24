@@ -14,15 +14,19 @@ name: build and deploy pixel
 # AWS access is GitHub OIDC with role chaining: the OIDC token assumes a first role, which then assumes
 # the role that owns the target bucket. No long-lived AWS credentials exist in this repo.
 #
-# EVERY per-environment value (both role ARNs, the bucket, the public host, the collector URL) is an
-# environment-scoped Actions variable — this repo is public, and a public workflow file publishes
-# whatever is written in it. They are read at STEP level rather than in a job-level `env:` block:
+# EVERY per-environment value is environment-scoped — this repo is public, and a public workflow file
+# publishes whatever is written in it. The public ones (CDN host, collector URL) are Actions variables.
+# The infra identifiers (both role ARNs, the bucket) are environment SECRETS, not variables, and that is
+# not about confidentiality of a credential: the runner prints every step's resolved `env:` and `with:`
+# in the step header, before the step runs, so a variable there lands in the world-readable log and no
+# `::add-mask::` can reach it in time. Secrets are masked from the first line. Keep them secrets.
+# They are read at STEP level rather than in a job-level `env:` block:
 # environment variables are documented as available "after their environment is declared by the runner",
 # and an empty value would be silent and wrong rather than loud (build.mjs falls back to the PRODUCTION
 # collector when the variable is unset, and an empty string bakes an empty URL). `Check deploy config`
 # fails the job before anything is built, signed or uploaded. It prints only the collector and the CDN
-# host, both of which are public: this repo's build logs are world-readable, so the bucket name and the
-# distribution id are deliberately kept out of them.
+# host, both of which are public: this repo's build logs are world-readable, so the bucket name, the
+# account ids and the distribution id are deliberately kept out of them.
 
 # Both jobs run on every trigger. There is no environment input: the `prod` environment's required
 # reviewers are the gate, so a push deploys staging and parks the same commit for a one-click promotion.
@@ -67,17 +71,17 @@ jobs:
       - name: Check deploy config
         env:
           INFLUENCE360_COLLECT_URL: ${{ vars.INFLUENCE360_COLLECT_URL }}
-          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
           PUBLIC_HOST: ${{ vars.PUBLIC_HOST }}
-          TARGET_ROLE_ARN: ${{ vars.TARGET_ROLE_ARN }}
-          AWS_GITHUB_ROLE_ARN: ${{ vars.AWS_GITHUB_ROLE_ARN }}
+          TARGET_ROLE_ARN: ${{ secrets.TARGET_ROLE_ARN }}
+          AWS_GITHUB_ROLE_ARN: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
         run: |
           missing=
           for name in INFLUENCE360_COLLECT_URL S3_BUCKET PUBLIC_HOST TARGET_ROLE_ARN AWS_GITHUB_ROLE_ARN; do
             [ -n "${!name}" ] || missing="${missing} ${name}"
           done
           if [ -n "$missing" ]; then
-            echo "::error::empty Actions variable(s):${missing} — declare them as environment-scoped Actions variables for this environment"
+            echo "::error::empty Actions variable(s):${missing} — declare them for this environment (the ARNs and S3_BUCKET as environment secrets, the rest as variables)"
             exit 1
           fi
           echo "collector: ${INFLUENCE360_COLLECT_URL}"
@@ -129,19 +133,21 @@ jobs:
       - name: Configure AWS credentials (OIDC first hop)
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          role-to-assume: ${{ vars.AWS_GITHUB_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
 
       - name: Assume target account role
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          role-to-assume: ${{ vars.TARGET_ROLE_ARN }}
+          role-to-assume: ${{ secrets.TARGET_ROLE_ARN }}
           role-chaining: true
           aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
 
       - name: Publish pixel + manifest, invalidate CloudFront
         env:
-          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
           PUBLIC_HOST: ${{ vars.PUBLIC_HOST }}
         run: ./scripts/publish.sh
 
@@ -167,17 +173,17 @@ jobs:
       - name: Check deploy config
         env:
           INFLUENCE360_COLLECT_URL: ${{ vars.INFLUENCE360_COLLECT_URL }}
-          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
           PUBLIC_HOST: ${{ vars.PUBLIC_HOST }}
-          TARGET_ROLE_ARN: ${{ vars.TARGET_ROLE_ARN }}
-          AWS_GITHUB_ROLE_ARN: ${{ vars.AWS_GITHUB_ROLE_ARN }}
+          TARGET_ROLE_ARN: ${{ secrets.TARGET_ROLE_ARN }}
+          AWS_GITHUB_ROLE_ARN: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
         run: |
           missing=
           for name in INFLUENCE360_COLLECT_URL S3_BUCKET PUBLIC_HOST TARGET_ROLE_ARN AWS_GITHUB_ROLE_ARN; do
             [ -n "${!name}" ] || missing="${missing} ${name}"
           done
           if [ -n "$missing" ]; then
-            echo "::error::empty Actions variable(s):${missing} — declare them as environment-scoped Actions variables for this environment"
+            echo "::error::empty Actions variable(s):${missing} — declare them for this environment (the ARNs and S3_BUCKET as environment secrets, the rest as variables)"
             exit 1
           fi
           echo "collector: ${INFLUENCE360_COLLECT_URL}"
@@ -211,18 +217,20 @@ jobs:
       - name: Configure AWS credentials (OIDC first hop)
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          role-to-assume: ${{ vars.AWS_GITHUB_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
 
       - name: Assume target account role
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          role-to-assume: ${{ vars.TARGET_ROLE_ARN }}
+          role-to-assume: ${{ secrets.TARGET_ROLE_ARN }}
           role-chaining: true
           aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
 
       - name: Publish pixel + manifest, invalidate CloudFront
         env:
-          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
           PUBLIC_HOST: ${{ vars.PUBLIC_HOST }}
         run: ./scripts/publish.sh

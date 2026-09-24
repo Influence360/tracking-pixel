@@ -45,11 +45,16 @@ visitor's browser, so keep it small.
     protect a cross-repo contract, **keep the invariant and drop the pointer**: say that the collector
     must reconstruct the same bytes, without naming the class that does it.
   - No infra identifiers: account ids, role ARNs, bucket names, distribution ids, internal hostnames.
-    Per-environment values are environment-scoped Actions variables, read at step level. The production
-    CDN and collector hosts are the exception — customers embed them, they are the public contract.
+    Per-environment values are environment-scoped and read at step level. The infra identifiers (both
+    role ARNs, the bucket) are environment **secrets**, not variables: the runner prints every step's
+    resolved `env:` and `with:` in the step header before the step runs, so a variable there is published
+    and `::add-mask::` cannot reach it in time — only secrets are masked from the first line. The
+    production CDN and collector hosts are the exception — customers embed them, they are the public
+    contract — and stay variables.
   - **Never echo an infra value into a build log.** `Check deploy config` and `publish.sh` deliberately
-    print only the collector URL and the CDN host; logging `S3_BUCKET` would publish the bucket name on
-    every run and undo the point of keeping it in a variable.
+    print only the collector URL and the CDN host, and every `aws s3 cp` runs with `--only-show-errors`
+    (its default `upload: … to s3://<bucket>/…` line is a leak). Both `configure-aws-credentials` steps
+    set `mask-aws-account-id: true`. Logging `S3_BUCKET` would publish the bucket name on every run.
   - Non-public reasoning ("we decided X because of customer Y", ticket-tracker context, roadmap) belongs
     in the internal plan doc, not in this repo.
 

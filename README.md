@@ -130,16 +130,18 @@ publishing role is assumed only by a run of the workflow above.
 
 ### Deploy configuration
 
-Every per-environment value is an **environment-scoped Actions variable**, never a literal in the
-workflow file — this repo is public, so anything written there is published with it:
+Every per-environment value is **environment-scoped**, never a literal in the workflow file — this repo
+is public, so anything written there is published with it. The infra identifiers are environment
+**secrets** rather than variables: the runner prints each step's resolved `env:` and `with:` values in
+the world-readable log, and only secrets are masked there.
 
-| Variable                   | What it is                                            |
-| -------------------------- | ----------------------------------------------------- |
-| `AWS_GITHUB_ROLE_ARN`      | First hop — the role the OIDC token assumes           |
-| `TARGET_ROLE_ARN`          | Second hop — the role that owns the target bucket     |
-| `S3_BUCKET`                | Bucket the three objects are published to             |
-| `PUBLIC_HOST`              | CDN host, used to find the distribution to invalidate |
-| `INFLUENCE360_COLLECT_URL` | Collector baked into the bundle at build time         |
+| Name                       | Kind     | What it is                                            |
+| -------------------------- | -------- | ----------------------------------------------------- |
+| `AWS_GITHUB_ROLE_ARN`      | secret   | First hop — the role the OIDC token assumes           |
+| `TARGET_ROLE_ARN`          | secret   | Second hop — the role that owns the target bucket     |
+| `S3_BUCKET`                | secret   | Bucket the three objects are published to             |
+| `PUBLIC_HOST`              | variable | CDN host, used to find the distribution to invalidate |
+| `INFLUENCE360_COLLECT_URL` | variable | Collector baked into the bundle at build time         |
 
 The `Check deploy config` step fails the job if any is empty, before anything is built or uploaded — an
 unset `INFLUENCE360_COLLECT_URL` would otherwise fall back to the **production** collector and publish

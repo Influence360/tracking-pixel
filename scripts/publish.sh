@@ -32,7 +32,9 @@ ROLLING_KEY="${ROLLING_PATH#/}"
 CONTENT_TYPE="application/javascript; charset=utf-8"
 
 # Only public values are logged: this repo's build logs are world-readable, so the bucket name stays out
-# of them (the CDN host is the customer-facing URL, so it is fine).
+# of them (the CDN host is the customer-facing URL, so it is fine). S3_BUCKET is also a masked secret, but
+# every `aws s3 cp` still runs with --only-show-errors: its default `upload: … to s3://<bucket>/…` line is
+# exactly the leak, and the mask is only as good as the value being stored as a secret.
 echo "publishing influence360.js v${VERSION} to ${PUBLIC_HOST}"
 echo "  ${SHA384}"
 
@@ -53,7 +55,7 @@ if existing=$(aws s3api head-object --bucket "$S3_BUCKET" --key "$IMMUTABLE_KEY"
   fi
   echo "  ${IMMUTABLE_KEY} already published with identical bytes — skipping"
 else
-  aws s3 cp dist/influence360.js "s3://${S3_BUCKET}/${IMMUTABLE_KEY}" \
+  aws s3 cp --only-show-errors dist/influence360.js "s3://${S3_BUCKET}/${IMMUTABLE_KEY}" \
     --content-type "$CONTENT_TYPE" \
     --cache-control "public, max-age=31536000, immutable" \
     --metadata "sha256=${SHA256},sha384=${SHA384},version=${VERSION}"
@@ -62,17 +64,17 @@ fi
 
 ########################################################################################################
 # 2. Rolling major channel — the default snippet; auto-updates within the major.
-aws s3 cp dist/influence360.js "s3://${S3_BUCKET}/${ROLLING_KEY}" \
+aws s3 cp --only-show-errors dist/influence360.js "s3://${S3_BUCKET}/${ROLLING_KEY}" \
   --content-type "$CONTENT_TYPE" \
   --cache-control "public, max-age=300, s-maxage=86400" \
   --metadata "sha256=${SHA256},sha384=${SHA384},version=${VERSION}"
 
 ########################################################################################################
 # 3. Public manifest — merge this build into whatever is already published.
-aws s3 cp "s3://${S3_BUCKET}/manifest.json" dist/published-manifest.json 2>/dev/null ||
+aws s3 cp --only-show-errors "s3://${S3_BUCKET}/manifest.json" dist/published-manifest.json 2>/dev/null ||
   echo "  no published manifest yet"
 node scripts/merge-manifest.mjs dist/published-manifest.json dist/manifest.json
-aws s3 cp dist/manifest.json "s3://${S3_BUCKET}/manifest.json" \
+aws s3 cp --only-show-errors dist/manifest.json "s3://${S3_BUCKET}/manifest.json" \
   --content-type "application/json; charset=utf-8" \
   --cache-control "public, max-age=60"
 
