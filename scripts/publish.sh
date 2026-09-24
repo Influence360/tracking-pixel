@@ -16,8 +16,8 @@
 #
 # Every read of the bucket fails CLOSED. "Is it already published?" is answered "no" only when S3 says
 # 404; a 403, a throttle, a 5xx or a network error ends the deploy, because reading any of them as "not
-# there" would upload over a pinned object (step 1) or republish a manifest that has lost every older
-# build (step 3). A genuinely missing key answers 404 rather than 403 only because the deploy role holds
+# there" would upload over a pinned object (step 2) or republish a manifest that has lost every older
+# build (step 4). A genuinely missing key answers 404 rather than 403 only because the deploy role holds
 # s3:ListBucket on the bucket — without it, every first publish of a version fails here, loudly.
 #
 # Required env: S3_BUCKET, PUBLIC_HOST. Requires: aws, node, jq-free (node parses the JSON).
@@ -40,7 +40,7 @@ aws_unless_missing() {
   local status=0 err
   "$@" 2>"$AWS_ERR" || status=$?
   [ "$status" -eq 0 ] && return 0
-  grep -q '(404)' "$AWS_ERR" && return 3
+  grep -q 'An error occurred (404)' "$AWS_ERR" && return 3
   err=$(tr '\n' ' ' <"$AWS_ERR")
   echo "::error::aws $2 $3 failed (exit ${status}), refusing to treat it as not-published: ${err//"$S3_BUCKET"/<bucket>}" >&2
   exit 1
@@ -63,7 +63,11 @@ echo "publishing influence360.js v${VERSION} to ${PUBLIC_HOST}"
 echo "  ${SHA384}"
 
 ########################################################################################################
-# 1. Immutable pinned object — write once, verify on re-run.
+# 1. Read everything the deploy depends on BEFORE writing anything, so a failed read ends the deploy
+#    with the bucket untouched rather than half-published (rolling channel updated, manifest not).
+
+# 1a. Is the pinned version already published? Only exit 3 (a 404) means "no"; any other non-zero
+#     status — including a failed redirect that never ran aws — ends the deploy.
 head_status=0
 aws_unless_missing aws s3api head-object --bucket "$S3_BUCKET" --key "$IMMUTABLE_KEY" \
   >dist/published-head.json || head_status=$?
@@ -80,41 +84,31 @@ if [ "$head_status" -eq 0 ]; then
     echo "::error::${IMMUTABLE_KEY} is already published with different bytes (published ${published_sha}, built ${SHA256}). Overwriting it would break every customer pinning that integrity hash. Bump the version in package.json."
     exit 1
   fi
-  echo "  ${IMMUTABLE_KEY} already published with identical bytes — skipping"
+  upload_pinned=false
+elif [ "$head_status" -eq 3 ]; then
+  upload_pinned=true
 else
-  aws s3 cp --only-show-errors dist/influence360.js "s3://${S3_BUCKET}/${IMMUTABLE_KEY}" \
-    --content-type "$CONTENT_TYPE" \
-    --cache-control "public, max-age=31536000, immutable" \
-    --metadata "sha256=${SHA256},sha384=${SHA384},version=${VERSION}"
-  echo "  published ${IMMUTABLE_KEY}"
+  echo "::error::could not check whether ${IMMUTABLE_KEY} is published (status ${head_status})" >&2
+  exit 1
 fi
 
-########################################################################################################
-# 2. Rolling major channel — the default snippet; auto-updates within the major.
-aws s3 cp --only-show-errors dist/influence360.js "s3://${S3_BUCKET}/${ROLLING_KEY}" \
-  --content-type "$CONTENT_TYPE" \
-  --cache-control "public, max-age=300, s-maxage=86400" \
-  --metadata "sha256=${SHA256},sha384=${SHA384},version=${VERSION}"
-
-########################################################################################################
-# 3. Public manifest — merge this build into whatever is already published.
-# Only a 404 is "nothing published yet"; merge-manifest.mjs then starts a new index from this build.
+# 1b. The published manifest, merged with this build. Only a 404 is "nothing published yet";
+#     merge-manifest.mjs then starts a new index from this build.
 rm -f dist/published-manifest.json
 manifest_status=0
 aws_unless_missing aws s3 cp --only-show-errors "s3://${S3_BUCKET}/manifest.json" \
   dist/published-manifest.json || manifest_status=$?
-if [ "$manifest_status" -ne 0 ]; then
+if [ "$manifest_status" -eq 3 ]; then
   rm -f dist/published-manifest.json
   echo "  no published manifest yet"
+elif [ "$manifest_status" -ne 0 ]; then
+  echo "::error::could not read the published manifest (status ${manifest_status})" >&2
+  exit 1
 fi
 node scripts/merge-manifest.mjs dist/published-manifest.json dist/manifest.json
-aws s3 cp --only-show-errors dist/manifest.json "s3://${S3_BUCKET}/manifest.json" \
-  --content-type "application/json; charset=utf-8" \
-  --cache-control "public, max-age=60"
 
-########################################################################################################
-# 4. Invalidate only the mutable objects. The pinned path is immutable, so it is never in the way.
-# A distribution with no aliases has no Aliases.Items at all, and contains() on null is a type error.
+# 1c. The distribution to invalidate. A distribution with no aliases has no Aliases.Items at all, and
+#     contains() on null is a type error.
 DIST_ID=$(aws cloudfront list-distributions \
   --query "DistributionList.Items[?contains(Aliases.Items || \`[]\`, '${PUBLIC_HOST}')].Id | [0]" \
   --output text)
@@ -124,12 +118,40 @@ if [ -z "$DIST_ID" ] || [ "$DIST_ID" = "None" ]; then
 fi
 # A denied invalidation's error quotes the distribution ARN, id included.
 echo "::add-mask::${DIST_ID}"
+
+########################################################################################################
+# 2. Immutable pinned object — write once, verify on re-run.
+if [ "$upload_pinned" = true ]; then
+  aws s3 cp --only-show-errors dist/influence360.js "s3://${S3_BUCKET}/${IMMUTABLE_KEY}" \
+    --content-type "$CONTENT_TYPE" \
+    --cache-control "public, max-age=31536000, immutable" \
+    --metadata "sha256=${SHA256},sha384=${SHA384},version=${VERSION}"
+  echo "  published ${IMMUTABLE_KEY}"
+else
+  echo "  ${IMMUTABLE_KEY} already published with identical bytes — skipping"
+fi
+
+########################################################################################################
+# 3. Rolling major channel — the default snippet; auto-updates within the major.
+aws s3 cp --only-show-errors dist/influence360.js "s3://${S3_BUCKET}/${ROLLING_KEY}" \
+  --content-type "$CONTENT_TYPE" \
+  --cache-control "public, max-age=300, s-maxage=86400" \
+  --metadata "sha256=${SHA256},sha384=${SHA384},version=${VERSION}"
+
+########################################################################################################
+# 4. Public manifest (merged in 1b).
+aws s3 cp --only-show-errors dist/manifest.json "s3://${S3_BUCKET}/manifest.json" \
+  --content-type "application/json; charset=utf-8" \
+  --cache-control "public, max-age=60"
+
+########################################################################################################
+# 5. Invalidate only the mutable objects. The pinned path is immutable, so it is never in the way.
 echo "  invalidating /${ROLLING_KEY} and /manifest.json"
 aws cloudfront create-invalidation --distribution-id "$DIST_ID" \
   --paths "/${ROLLING_KEY}" "/manifest.json" >/dev/null
 
 ########################################################################################################
-# 5. Publish the hashes where a human can read them (the manifest is the machine-readable copy).
+# 6. Publish the hashes where a human can read them (the manifest is the machine-readable copy).
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   {
     echo "### influence360.js v${VERSION} → ${PUBLIC_HOST}"

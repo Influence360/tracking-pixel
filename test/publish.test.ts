@@ -65,6 +65,10 @@ if (service === 's3api' && op === 'head-object') {
       fs.writeFileSync(file + '.meta', JSON.stringify(Object.fromEntries(opt('--metadata').split(',').map((kv) => kv.split('=')))));
   }
 } else if (service === 'cloudfront' && op === 'list-distributions') {
+  // The account holds a distribution with no aliases, so a query calling contains() on a bare
+  // Aliases.Items fails the way the real CLI does.
+  if (!opt('--query').includes('contains(Aliases.Items || \`[]\`,'))
+    fail('In function contains(), invalid type for value: None, expected one of: [\\'array\\', \\'string\\'], received: "null"', 255);
   process.stdout.write('E1STUB\\n');
 } else if (service === 'cloudfront' && op === 'create-invalidation') {
   process.stdout.write('{}\\n');
@@ -107,6 +111,10 @@ function publish(env: Record<string, string> = {}) {
     : [];
   return { ...result, output: result.stdout + result.stderr, calls };
 }
+
+/** Every upload: an `s3 cp` from a local file to the bucket. */
+const writes = (calls: string[]) =>
+  calls.filter((c) => /^s3 cp .*\sdist\/\S+ s3:\/\//.test(c));
 
 const uploadsTo = (calls: string[], key: string) =>
   calls.filter(
@@ -225,7 +233,8 @@ describe('publish.sh — the manifest', () => {
     });
 
     expect(run.status).toBe(1);
-    expect(uploadsTo(run.calls, 'manifest.json')).toEqual([]);
+    // Every read runs before the first write, so nothing — not even the rolling channel — is published.
+    expect(writes(run.calls)).toEqual([]);
     expect(objectBody('manifest.json')).toBe(existing);
     // The error is printed, but never with the bucket name in it.
     expect(run.output).toContain('AccessDenied');
@@ -240,7 +249,18 @@ describe('publish.sh — the manifest', () => {
 
     expect(run.status).toBe(1);
     expect(run.output).toContain('not a valid index');
-    expect(uploadsTo(run.calls, 'manifest.json')).toEqual([]);
+    expect(writes(run.calls)).toEqual([]);
     expect(objectBody('manifest.json')).toBe('{"builds": [');
+  });
+});
+
+describe('publish.sh — the invalidation', () => {
+  it('finds the distribution when another one in the account has no aliases', () => {
+    const run = publish();
+
+    expect(run.status, run.output).toBe(0);
+    expect(
+      run.calls.filter((c) => c.startsWith('cloudfront create-invalidation')),
+    ).toHaveLength(1);
   });
 });
