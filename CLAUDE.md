@@ -20,6 +20,8 @@ visitor's browser, so keep it small.
   emits `dist/manifest-entry.json` (sha256 + the sha384 customers pin with `integrity=`).
 - `scripts/publish.sh` — the deploy: immutable `/v<version>/`, rolling `/v<major>/`, merged
   `manifest.json`, CloudFront invalidation. Refuses to overwrite an already-published version.
+- `scripts/assume-role.sh` — GitHub OIDC → first-hop role → target role, credentials masked and
+  exported to `$GITHUB_ENV`. Prints nothing STS returns.
 - `scripts/merge-manifest.mjs`, `scripts/check-reproducible.mjs` — manifest merge and the
   build-twice-and-compare check.
 
@@ -53,8 +55,10 @@ visitor's browser, so keep it small.
     contract — and stay variables.
   - **Never echo an infra value into a build log.** `Check deploy config` and `publish.sh` deliberately
     print only the collector URL and the CDN host, and every `aws s3 cp` runs with `--only-show-errors`
-    (its default `upload: … to s3://<bucket>/…` line is a leak). Both `configure-aws-credentials` steps
-    set `mask-aws-account-id: true`. Logging `S3_BUCKET` would publish the bucket name on every run.
+    (its default `upload: … to s3://<bucket>/…` line is a leak). AWS roles are assumed by
+    `scripts/assume-role.sh`, not `configure-aws-credentials`, which logs the assumed role's unique id
+    (`AROA…`) — and a unique id decodes to the account id. Logging `S3_BUCKET` would publish the bucket
+    name on every run.
   - Non-public reasoning ("we decided X because of customer Y", ticket-tracker context, roadmap) belongs
     in the internal plan doc, not in this repo.
 

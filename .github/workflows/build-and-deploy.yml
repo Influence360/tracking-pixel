@@ -12,7 +12,8 @@ name: build and deploy pixel
 # every customer's `integrity=` attribute. Bump the version to ship a change.
 #
 # AWS access is GitHub OIDC with role chaining: the OIDC token assumes a first role, which then assumes
-# the role that owns the target bucket. No long-lived AWS credentials exist in this repo.
+# the role that owns the target bucket (scripts/assume-role.sh). No long-lived AWS credentials exist in
+# this repo.
 #
 # EVERY per-environment value is environment-scoped — this repo is public, and a public workflow file
 # publishes whatever is written in it. The public ones (CDN host, collector URL) are Actions variables.
@@ -130,20 +131,13 @@ jobs:
         with:
           subject-path: dist/influence360.js
 
-      - name: Configure AWS credentials (OIDC first hop)
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
-        with:
-          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-          mask-aws-account-id: true
-
-      - name: Assume target account role
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
-        with:
-          role-to-assume: ${{ secrets.TARGET_ROLE_ARN }}
-          role-chaining: true
-          aws-region: ${{ env.AWS_REGION }}
-          mask-aws-account-id: true
+      # Not aws-actions/configure-aws-credentials: it logs the assumed role's unique id, which decodes
+      # to the account id. See the header of scripts/assume-role.sh.
+      - name: Assume AWS roles (OIDC, then target account)
+        env:
+          AWS_GITHUB_ROLE_ARN: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
+          TARGET_ROLE_ARN: ${{ secrets.TARGET_ROLE_ARN }}
+        run: ./scripts/assume-role.sh
 
       - name: Publish pixel + manifest, invalidate CloudFront
         env:
@@ -214,20 +208,13 @@ jobs:
         with:
           subject-path: dist/influence360.js
 
-      - name: Configure AWS credentials (OIDC first hop)
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
-        with:
-          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-          mask-aws-account-id: true
-
-      - name: Assume target account role
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
-        with:
-          role-to-assume: ${{ secrets.TARGET_ROLE_ARN }}
-          role-chaining: true
-          aws-region: ${{ env.AWS_REGION }}
-          mask-aws-account-id: true
+      # Not aws-actions/configure-aws-credentials: it logs the assumed role's unique id, which decodes
+      # to the account id. See the header of scripts/assume-role.sh.
+      - name: Assume AWS roles (OIDC, then target account)
+        env:
+          AWS_GITHUB_ROLE_ARN: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
+          TARGET_ROLE_ARN: ${{ secrets.TARGET_ROLE_ARN }}
+        run: ./scripts/assume-role.sh
 
       - name: Publish pixel + manifest, invalidate CloudFront
         env:
