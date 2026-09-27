@@ -79,4 +79,4 @@ a single character of drift makes every wallet signature verify as false.
   Per-environment values are environment-scoped: infra identifiers as secrets (the only kind the run log
   masks), the public CDN and collector hosts as variables. When a comment exists to protect a
   cross-repo contract, keep the invariant and drop the pointer: say the collector must reconstruct the
-  same bytes, without naming the class that does it. See `CLAUDE.md` for the full rule.
+  same bytes, without naming the class that does it. See `AGENTS.md` for the full rule.

@@ -1,6 +1,6 @@
-# CLAUDE.md — tracking-pixel
+# AGENTS.md — tracking-pixel
 
-Guidance for Claude Code in this repo.
+Guidance for AI coding agents in this repo.
 
 ## What this is
 
