@@ -33,7 +33,10 @@ export interface CollectEvent {
   // the body and it stays out of the wire-contract key set.
   /** The ref id minted by our redirect (from the `_influence360_ref_id` first-party cookie), or null. */
   refId: string | null;
-  /** Idempotency key from the company (hashed email / order id), or null. */
+  /**
+   * Idempotency key: the company's own (hashed email / order id), else an automatic `auto:<id>` key the pixel keeps
+   * per event type and page for the browser session; null only for a test event without one or a visit with no ref.
+   */
   dedupKey: string | null;
   /** The page URL the event fired on (the Meta CAPI `event_source_url` analog). */
   eventSourceUrl: string;
@@ -50,6 +53,10 @@ export interface CollectEvent {
 
 /** Options accepted by `influence360('track', event, options)`. */
 export interface TrackOptions {
+  /**
+   * Your idempotency key for this conversion (an order id, a hashed user id). Omit it and the pixel sends one per
+   * event type and page per browser session, so a reload of the success page is not credited twice.
+   */
   dedupKey?: string;
   /** Order value, for PURCHASE. A money-as-string amount, e.g. '49.99'. */
   orderValue?: string;

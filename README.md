@@ -64,6 +64,10 @@ influence360('init', 'PUBLIC_TOKEN', { collectUrl }); // on every page — captu
 influence360('track', 'PURCHASE', { dedupKey, orderValue }); // on a conversion success page (PURCHASE→orderValue, DEPOSIT→depositValue, SUBSCRIPTION→qualifyingPlan)
 ```
 
+`dedupKey` is your idempotency key (an order id or a hashed user id). Without one, the pixel sends its own key
+per event type and page URL for the browser session, so a reload of the success page is not credited twice.
+Amounts are plain decimals as strings: `'1299.00'`, not `'1,299.00'` or `'$1299'`.
+
 ## Wire-contract
 
 [`src/types.ts`](src/types.ts) (`CollectEvent`) is the single source of truth for the body POSTed to

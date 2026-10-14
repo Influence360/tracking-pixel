@@ -17,6 +17,16 @@ The version here drives the published paths and is the release's identity:
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-10-15
+
+### Added
+
+- An automatic `dedupKey` when `track(...)` is called without one: one key per event type and page URL per
+  browser session (`auto:<random id>`, kept in `sessionStorage`). Reloading the success page, or going Back to
+  it, re-sends the same key, so the conversion is credited once instead of on every load. Your own order or
+  user id is still the better key: two real conversions of one type on the same page URL in one session share
+  the automatic key and count once. Test events and visits without a captured ref get no automatic key.
+
 ## [1.0.0] — 2026-08-03
 
 First release under the versioned, hash-pinnable distribution scheme. The tracker itself is

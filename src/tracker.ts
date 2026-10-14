@@ -52,6 +52,24 @@ function readStorage(key: string): string | null {
   }
 }
 
+/** Reads a sessionStorage value, tolerating disabled/blocked storage. */
+function readSessionStorage(key: string): string | null {
+  try {
+    return window.sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+/** Writes a sessionStorage value, swallowing any storage error (must never throw into the host page). */
+function writeSessionStorage(key: string, value: string): void {
+  try {
+    window.sessionStorage.setItem(key, value);
+  } catch {
+    // private mode / disabled / quota — the key is then fresh on every call.
+  }
+}
+
 /** Writes a localStorage value, swallowing any storage error (must never throw into the host page). */
 function writeStorage(key: string, value: string): void {
   try {
@@ -124,6 +142,48 @@ export function captureClick(href: string, domain: string | null = null): void {
       return;
     }
   }
+}
+
+/** sessionStorage key prefix under which {@link autoDedupKey} keeps a key per (event type, page). */
+export const AUTO_DEDUP_STORAGE_PREFIX = '_influence360_auto_dedup:';
+
+/** A random id for an automatic dedup key: `crypto.randomUUID` where available, else 128 random bits in hex. */
+function randomId(): string {
+  try {
+    if (typeof crypto !== 'undefined') {
+      if (typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+      }
+      if (typeof crypto.getRandomValues === 'function') {
+        const bytes = crypto.getRandomValues(new Uint8Array(16));
+        return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(
+          '',
+        );
+      }
+    }
+  } catch {
+    // fall through to Math.random
+  }
+  return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+}
+
+/**
+ * The dedupKey the pixel sends when the caller gave none: one per (event type, page URL) per browser session. A
+ * reload of the success page, or Back to it, re-sends the same key, so the conversion is credited once instead of
+ * on every load. The key is `auto:<random id>` (it carries nothing about the page) and lives in sessionStorage, so
+ * it ends with the tab's session. When storage is blocked the key is fresh on every call, which is no worse than
+ * sending none. A caller's own order or user id is still better: two real conversions of one type on the same page
+ * URL in one session share this key and count once.
+ */
+export function autoDedupKey(event: string, pageKey: string): string {
+  const storageKey = `${AUTO_DEDUP_STORAGE_PREFIX}${event}:${pageKey}`;
+  const stored = readSessionStorage(storageKey);
+  if (stored) {
+    return stored;
+  }
+  const minted = `auto:${randomId()}`;
+  writeSessionStorage(storageKey, minted);
+  return minted;
 }
 
 /** Assembles a {@link CollectEvent} from the tracker state + a track() call. */
@@ -320,11 +380,26 @@ export class Tracker {
     return bindingMessage(refId, wallet, chain, signedAtMs);
   }
 
+  /**
+   * Reports a conversion. Without a `dedupKey` (and outside a test event) the pixel sends an automatic one per
+   * event type and page per browser session ({@link autoDedupKey}), so reloading the success page does not credit
+   * the conversion again.
+   */
   track(event: string, opts: TrackOptions = {}): void {
+    const refId = readRef();
+    const hasOwnKey =
+      typeof opts.dedupKey === 'string' && opts.dedupKey.trim() !== '';
+    const dedupKey =
+      hasOwnKey || opts.test === true || !refId
+        ? opts.dedupKey
+        : autoDedupKey(
+            event,
+            window.location.pathname + window.location.search,
+          );
     const body = buildEvent(
-      readRef(),
+      refId,
       event,
-      opts,
+      { ...opts, dedupKey },
       window.location.href,
       Date.now(),
     );

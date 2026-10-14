@@ -1,6 +1,6 @@
 {
   "name": "@influence360/tracking-pixel",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Influence360 conversion pixel — browser tracker (influence360.js) + bootstrap stub.",
   "license": "Apache-2.0",
   "homepage": "https://github.com/Influence360/tracking-pixel",

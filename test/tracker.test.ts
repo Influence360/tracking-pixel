@@ -11,6 +11,8 @@ function blobText(blob: Blob): Promise<string> {
 }
 
 import {
+  AUTO_DEDUP_STORAGE_PREFIX,
+  autoDedupKey,
   bindingMessage,
   buildEvent,
   buildIdentify,
@@ -323,6 +325,77 @@ describe('Tracker', () => {
     expect(body.content.orderValue).toBe('10');
 
     vi.unstubAllGlobals();
+  });
+
+  it('sends one automatic dedupKey per event type and page for the session when the caller gives none', async () => {
+    window.sessionStorage.clear();
+    const sendBeacon = vi.fn().mockReturnValue(true);
+    vi.stubGlobal('navigator', { sendBeacon });
+    const keyOf = async (call: number): Promise<string | null> => {
+      const blob = sendBeacon.mock.calls[call][1] as Blob;
+      return (JSON.parse(await blobText(blob)) as CollectEvent).dedupKey;
+    };
+
+    const tracker = new Tracker(COLLECT_URL);
+    history.replaceState({}, '', '/thanks?influence360RefId=clk-auto');
+    tracker.init('site-1');
+    tracker.track('PURCHASE', { orderValue: '10' });
+    // A reload of the same success page re-sends the same key, so the conversion is credited once.
+    tracker.track('PURCHASE', { orderValue: '10' });
+    tracker.track('SIGN_UP');
+    history.replaceState({}, '', '/thanks/other');
+    tracker.track('PURCHASE', { orderValue: '10' });
+
+    const first = await keyOf(0);
+    expect(first).toMatch(/^auto:[0-9a-f-]{32,36}$/);
+    expect(await keyOf(1)).toBe(first);
+    expect(await keyOf(2)).not.toBe(first);
+    expect(await keyOf(3)).not.toBe(first);
+
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps the caller's dedupKey, and sends none for a test event without one", async () => {
+    window.sessionStorage.clear();
+    const sendBeacon = vi.fn().mockReturnValue(true);
+    vi.stubGlobal('navigator', { sendBeacon });
+
+    const tracker = new Tracker(COLLECT_URL);
+    history.replaceState({}, '', '/thanks?influence360RefId=clk-own');
+    tracker.init('site-1');
+    tracker.track('PURCHASE', { dedupKey: 'order-7', orderValue: '10' });
+    tracker.track('SIGN_UP', { test: true });
+
+    const bodies = await Promise.all(
+      sendBeacon.mock.calls.map(
+        async (call) =>
+          JSON.parse(await blobText(call[1] as Blob)) as CollectEvent,
+      ),
+    );
+    expect(bodies[0].dedupKey).toBe('order-7');
+    expect(bodies[1].dedupKey).toBeNull();
+    expect(
+      Object.keys(window.sessionStorage).filter((k) =>
+        k.startsWith(AUTO_DEDUP_STORAGE_PREFIX),
+      ),
+    ).toHaveLength(0);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('mints a fresh automatic key without throwing when sessionStorage is blocked', () => {
+    const blocked = vi
+      .spyOn(window.sessionStorage, 'getItem')
+      .mockImplementation(() => {
+        throw new Error('blocked');
+      });
+
+    const a = autoDedupKey('PURCHASE', '/blocked');
+    const b = autoDedupKey('PURCHASE', '/blocked');
+    expect(a).toMatch(/^auto:/);
+    expect(b).toMatch(/^auto:/);
+
+    blocked.mockRestore();
   });
 
   it('sends a wallet-identify beacon to the /identify endpoint with the captured ref id', async () => {
