@@ -15,7 +15,7 @@ visitor's browser, so keep it small.
   must stay in sync with the collector's request DTO.
 - `src/tracker.ts` — pure, testable core: cookie helpers, `captureClick`, `buildEvent`, `Tracker`.
 - `src/influence360.ts` — browser entry point: drains `window.influence360.q` and wires the global. Bundled to `dist/influence360.js`.
-- `snippet/bootstrap.html` — the copy-paste stub the **portal** renders (with the company's PUBLIC_TOKEN).
+- `snippet/bootstrap.html` — the reference copy-paste stub (the portal generates its own equivalent).
 - `build.mjs` — esbuild bundle; bakes the collector URL via `--define` (`INFLUENCE360_COLLECT_URL`) and
   emits `dist/manifest-entry.json` (sha256 + the sha384 customers pin with `integrity=`).
 - `scripts/publish.sh` — the deploy: immutable `/v<version>/`, rolling `/v<major>/`, merged
@@ -30,7 +30,7 @@ visitor's browser, so keep it small.
 ## Conventions
 
 - TypeScript, ES2020, `strict`. Prettier (`singleQuote`, `trailingComma: all`) — `npm run format`.
-- **Tracking must never throw into the host page** — `Tracker.send` swallows all errors.
+- **Tracking must never throw into the host page** — `Tracker.post` swallows all errors.
 - **Never block the page** — fire-and-forget via `navigator.sendBeacon`, keepalive `fetch` fallback.
 - Keep the beacon a **CORS-safelisted** request (`text/plain` body) to avoid preflight. If you change
   the content type, the collector must add CORS handling.

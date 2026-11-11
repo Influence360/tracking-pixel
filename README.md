@@ -9,7 +9,7 @@ Licensed under [Apache-2.0](LICENSE). Security reports: [SECURITY.md](SECURITY.m
 
 ## What it does, and what it does not
 
-If you are evaluating whether to put this on your site, this is the part that matters. ~4 KB minified,
+If you are evaluating whether to put this on your site, this is the part that matters. ~6 KB minified,
 **zero runtime dependencies**.
 
 It does:

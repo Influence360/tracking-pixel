@@ -53,9 +53,9 @@
   influence360('track', 'SIGN_UP', {
     dedupKey: '<order-or-user-id>',
     // For monetary events, send the type-specific amount:
-    //   PURCHASE      -> orderValue: 49.99
-    //   DEPOSIT       -> depositValue: 250.00
-    //   SUBSCRIPTION  -> planPrice: 9.99, qualifyingPlan: 'pro-monthly'
+    //   PURCHASE      -> orderValue: '49.99'
+    //   DEPOSIT       -> depositValue: '250.00'
+    //   SUBSCRIPTION  -> qualifyingPlan: 'pro-monthly'
   });
   // Web3 only: right after the visitor connects their wallet, bind it to the referral so an on-chain
   // action from that wallet is attributed to the creator (wallet-at-activity).

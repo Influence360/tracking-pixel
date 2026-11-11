@@ -50,5 +50,5 @@ jobs:
       - name: Unit tests
         run: npm test
 
-      - name: Build bundle
-        run: npm run build
+      - name: Build bundle + reproducibility check
+        run: npm run verify:reproducible
