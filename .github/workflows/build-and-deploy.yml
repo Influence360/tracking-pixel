@@ -55,7 +55,7 @@ jobs:
   ########################################################
   # Staging: deploys unconditionally on every run — the `staging` environment has no required reviewers.
   deploy-staging:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 10
     permissions:
       id-token: write # OIDC federation to AWS
@@ -150,7 +150,7 @@ jobs:
   # main deploys staging immediately and parks the same commit awaiting a one-click promotion to prod.
   # Deliberately not gated by an `if:` on the dispatch input; the approval IS the gate.
   deploy-prod:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 10
     permissions:
       id-token: write
